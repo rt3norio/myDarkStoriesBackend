@@ -1,10 +1,10 @@
-var ds = require('nedb-promise');
 var express = require('express');
 var express_graphql = require('express-graphql');
 var { buildSchema } = require('graphql');
-var Nedb = require('nedb')
-cardsDb = new Nedb({ filename: 'cards.db', autoload: true });
-cards = ds.datastore.fromInstance(cardsDb);
+
+const mongoose = require('mongoose');
+mongoose.connect(process.env.MONGODB_URI, { useNewUrlParser: true, useUnifiedTopology: true });
+const Card = mongoose.model('Card', { title: String, plot: String, plotReveal: String });
 
 // GraphQL schema
 var schema = buildSchema(`
@@ -18,36 +18,40 @@ var schema = buildSchema(`
 
     type Card {
         _id: ID
-        name: String
+        title: String
         plot: String
         plotReveal: String
     }
 
     input inputCard {
-        name: String!
+        title: String!
         plot: String!
         plotReveal: String!
     }
 
     type Mutation{
         createCard(cardData: inputCard!): Card
-        deleteCard(which: String): Boolean
     }
 
 `);
 
+const getRandom = async () => {
+    const count = await Card.count().exec()
+    var random = Math.floor(Math.random() * count)
+    const card = await Card.findOne().skip(random).exec()
+    return card;
+}
 var root = {
-    getOneCard: (arg) => cards.findOne(arg),
-    createCard: (arg) => cards.insert({...arg.cardData}),
-    deleteCard: (arg) => cards.delete(arg),
+    getOneCard: async () => getRandom(),
+    createCard: (arg) => new Card(arg.cardData).save(),
 };
 // Create an express server and a GraphQL endpoint
 var app = express();
-app.use(function(req, res, next) {
+app.use(function (req, res, next) {
     res.header("Access-Control-Allow-Origin", "*"); // update to match the domain you will make the request from
     res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept");
     next();
-  });
+});
 app.use('/graphql', express_graphql({
     schema: schema,
     rootValue: root,
@@ -57,9 +61,9 @@ app.use('/graphql', express_graphql({
         locations: error.locations,
         stack: error.stack ? error.stack.split('\n') : [],
         path: error.path,
-      })
+    })
 }));
-app.use('/', (req,res)=>{
+app.use('/', (req, res) => {
     res.send('<h1>Micro-servico de Cartas</h1>');
 });
 const port = 8000
